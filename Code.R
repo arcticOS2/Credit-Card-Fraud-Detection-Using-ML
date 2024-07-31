@@ -4,6 +4,7 @@
 #NOTE: To read the .csv file you you must first download the creditcard.csv file to your working directory
 data=read.csv('creditcard.csv')  #Importing the creditcard.csv dataset
 
+#Checking the different characterstics of the data set
 str(data)
 
 #Checking For Missing Data
