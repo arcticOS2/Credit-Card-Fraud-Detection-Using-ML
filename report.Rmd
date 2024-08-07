@@ -1,0 +1,431 @@
+---
+title: "Credit Card Fraud Detection Using Machine Learning"
+author: "Arpan Samanta"
+output: 
+  html_document: 
+    toc: true
+---
+
+
+# Dataset
+Here we have worked on a dataset given by Gabriel Preda. The dataset contains transactions made by credit cards in **september 2013** by European cardholders. The dataset contains transactions that occurres in 2 days. Out of these **2,84,807** transactions **492** fraud tarnsactions were successfully detected. The dataset contains the time difference (in minutes) for each transaction from the first transaction, the encrypted features of a transaction, the amount of transaction and the class of fraud prediction where 0 means **non-detected** and 1 implies **detected.**
+
+The dataset is easily accessible at 
+[Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud). we will first call the necessary libraries then the dataset we are going to work on.
+
+# Objective
+Our main objective is to predict whether a transaction is fraud or not by applying necessary algorithms to our **training dataset**. We will predict the model on **testing dataset**.
+
+# Data Description
+We need to first import the dataset. Then we'll discuss about different feartures of the dataset as below. But, beforehand let us just call the necessary libraries and set the seed as we will use function that returns random outcomes, setting the seed will help us get same results.
+```{r loadlib, echo=T, results='hide', message=F, warning=F}
+#Importing necessary libraries
+library(ROSE)
+library(smotefamily)
+library(dplyr)
+library(caTools)
+library(pROC)
+library(caret)
+
+#Setting the seed
+set.seed(123)
+```
+
+Let us now import the data set and work on it.
+
+```{r}
+#Importing Data. 
+#NOTE: To read the .csv file you must first download the data.csv file to your working directory
+data=read.csv('data.csv')  #Importing the data.csv dataset
+
+str(data)      #The different features and their datatypes in the dataset 
+```
+**Comment:** The key features contain Time, Amount and the 28 unknown features of the credit cards which are numeric in nature. Also it has the Class (of fraud detection) which is boolean in nature.
+
+# Exploratory Data Analysis (EDA)
+First we need to check whether there exists any missing data in the dataset.
+```{r}
+#Checking For Missing Data
+sum(is.na(data))
+```
+**Comment:** There is no missing data in the data set.
+
+
+Now we'll check the summary of the dataset such as mean, median, qartiles, variance etc of the different parameters. Note that, we will omit the 'Time' parameter as it is a identification variable and of no use to us.
+```{r}
+#Removing the time column since it is of no use for us
+data=data[,-1]
+
+#Summary of the dataset
+summary(data)
+```
+```{r}
+#Variance of the parameters
+Column_Varience <- as.data.frame(sapply(data, function(x) var = var(x)))
+Column_Varience
+
+```
+
+## Data Visualization
+### Understanding how different parameters are affecting the `Class`
+
+The scattered `plot()`s for the `Class` and the different parameters are given below. The fitted regression lines are also there with `col = 'red'`.
+
+```{r echo=FALSE}
+# Understanding how each parameters are affecting the Class in their own way
+
+x_axis <- as.vector(colnames(data))
+par(mfrow = c(2,3))
+{
+  for (i in 1:30) {
+    if (i == 30) {
+      x_val <- 1:length(data$Class)
+      plot(x_val, data$Class, xlab = 'Serial Number', ylab = 'Class', main = 'Combined Effect')
+      class_pred <- as.vector(predict(lm(Class ~., data = data)))
+      abline(lsfit(x_val, class_pred), col = 'red')
+      break
+    }
+    plot(data[,i],data$Class, xlab = x_axis[i], ylab = 'Class')
+    abline(lm(data$Class ~ data[,i]), col = 'red')
+  }
+}
+```
+
+**Comment:** Here I've shown the graph of changing `Class` and parameters along with their fitted regression. Also, the last `plot` is showing the combined fitted regression of all the parameters on `Class`. Though, fitted regression lines (coloured in `red`) are mostly expanding towards densedly dotted area, but the linear regression doesn't properly estimates the categorical data, `Class` as it is not a numerical variable, it has boolean nature.
+We'll proceed with a more sweetable model in the next sections.
+
+### Visualising `Class` by `barplot()`
+
+The frequency distribution as well as the `barplot()` of the `Class` of fraud detection is given below.
+
+```{r}
+#Frequency Distribution of Fraud Detection
+table(data$Class)
+```
+
+
+```{r echo=FALSE }
+barplot(table(data$Class),col=c('yellow','red'),main='Barplot For Understatnding Fraud Detection',xlab='Nondetected-Detected',ylab='Number Of Users')    
+legend('topright',legend=c('Non-detected','Detected'),fill=c('yellow','red'))    
+```
+
+
+
+
+
+**Comment:** There are 284315 cases of non-detecting fraud, the fraud detected cases (492) are so small compared to that, that, it is not even properly represented in the `barplot()`.
+From the clear notion of the `plot()`, we see that this is a heavily imbalanced data. We need to balance the data via data augmentation.
+
+## Data Augmentation
+Data augmentation is the process of artificially generating new data from existing data, primarily to train new machine learning (ML) model. Basically, we're adding dummy data or subtracting data from data set or following other approaches that will help us to improve our model. There are different methods to do this, in our case we will use **random over sampling**. In this method we add dummy data to the minority case i.e in our case the number of detected frauds (represented by 1).
+```{r}
+over.sample_data <- ovun.sample(Class~.,data = data, method = 'over')   #Applying random over sampling method
+data <- over.sample_data$data     #This over sampled data is our new data that we will be working with
+head(data)
+```
+Let us now check the frequency distribution and `barplot()` of the augmented new data.
+
+```{r}
+#Frequency table for the Class of new balanced data
+table(data$Class)
+```
+
+
+```{r echo=FALSE}
+barplot(table(data$Class),col=c('yellow','red'),main='Barplot to Understand Blanced Data',
+        xlab='Detected-Nondetected',ylab='Number Of Users', ylim = c(0,380000))    
+legend('topright',legend=c('Non-detected','Detected'),fill=c('yellow','red'))
+```
+
+**Comment:** It may look like we are corrupting the data but data augmentation is needed in order to get a balanced data. Our new observation now lies with this new balanced data set, where we devide the data set into training and testing data set as proceed accordingly. Balancing a data is important since our main objective is to predict the testing data set and that can come from anywhere, balanced data will give a more accurate model for all the testing data set whereas imbalanced data set will execute an inacurate result except for its own testing set, the set created from it.
+**Note:** Since, we have now achieved our balanced data set. We will condider that as our working `data`.
+
+
+## Data Manupulation
+We will here basically do feature scaling of the data. Since large amounts were transferred, so normalization of the data will help us to compare the different predictors.
+```{r}
+data[,-30] <- data[,-30] %>% 
+  scale()
+head(data)      #Checking the first 6 lines of the edited data
+```
+
+
+**Comment:** Since, we have basically normalised the parameters all the columns lie roughly in between -3 to 3.
+
+
+# Splitting the Dataset
+According to our objective, we are interested in splitting the dataset into training data set and testing data set.
+```{r}
+#We will not be splitting the data set in a particular way.It will be random. So we set the seed to get same results.
+set.seed(123456789)    #Setting the seed
+
+split=sample.split(data$Amount,SplitRatio=0.7)     #Including the data into splitting sets randomly
+training_set=subset(data,split==TRUE)
+testing_set=subset(data,split==FALSE)
+head(training_set)
+head(testing_set)
+```
+
+
+
+**Comment:** The `SplitRatio = 0.7` means that we are deviding the whole dataset in a 70-30 percentage where 70% of the data will go to the `training_set` and the remaining 30% will go to the `testing_set`.
+
+# Model Building
+**Logistic model** (or logit model) is a statistical model that models the log-odds of an event as a linear combination of one or more independent variables. It is used in various fields roughly saying machine learning, medical sectors, social science etc. In general practice it takes a categorical variable as a response and numeric variable(s) as predictor(s). We are choosing logit model for our project. Firstly, we'll try to fit a proper logit model on the `training_set` and predict the **probability of predicting fraud**. Then we'll check for sweetable cutpoints by which we'll predict the `Class` of fraud detection.
+
+```{r}
+#Fitting logistic model on training_set
+logit_model=glm(Class~.,data= training_set, family = binomial(link = 'logit'))
+summary(logit_model)
+```
+**Note:** In the `Pr(>|z|)` column we're basically given the p-values for the corresponding variables. We can observe for smaller p-value a variable is marked as `*` , `**` or `***`, they're denoting the significance of a predictor. Greater the star more significant the predictor is.
+
+
+Let us now predict the probability of fraud detection by fitting the `logit_model` on the `training_set`.
+```{r}
+#Predicting the probability of fraud detection
+predict_class=predict(logit_model,type = 'response',newdata = training_set[,-30])    #We're deleting the last column in order to choose only the predictors
+pred=as.vector(predict_class)
+Class_vs_probability <- data.frame(training_set[,30],pred)
+colnames(Class_vs_probability) <- c('Class','Probability')
+head(Class_vs_probability)
+```
+
+**Comment:** Even though we got our necessary `Probability`, they are not categorical in nature. Note that, `Probability` always lies between 0 and 1. So, we can choose a sweetable cut point below which they're considered as 0 else 1. Thus we can get our predicted `Class` which is categorical in nature.
+
+## Choosing the cut point
+We will try to find the cut points using different approaches.
+
+### Youden's J statistic
+Youden's J statistic (also called Youden's index) is a single statistic that captures the performance of a dichotomous diagnostic test. It is given as following ;
+$$
+J = sensivity + specificity -1
+$$
+
+```{r}
+# Generate ROC object
+roc_obj <- roc(training_set$Class , pred)
+# Calculate the optimal cutoff using Youden's J statistic
+optimal_cutoff <- coords(roc_obj, "best", ret = "threshold", best.method = "youden")
+optimal_cutoff=optimal_cutoff$threshold
+
+# Print the optimal cutoff
+print(optimal_cutoff)
+
+# Classify probabilities into 0 or 1 using the optimal cutoff
+predicted_classes_optimal <- ifelse(pred > optimal_cutoff, 1, 0)
+
+# Print the first few predicted classes using the optimal cutoff
+predict_df1 <- data.frame(training_set[,30],predicted_classes_optimal)
+colnames(predict_df1) <- c('Actual Class','Predicted Class')
+head(predict_df1)
+```
+The frequency table as well as the bar plot for the `predicted_classes_optimal` i.e. the predicted `Class` is given below.
+```{r}
+#Frequency Distribution of Predicted Fraud Detection
+table(predicted_classes_optimal)
+```
+```{r echo=FALSE}
+barplot(table(predicted_classes_optimal),col=c('yellow','red'),main='Barplot For Understatnding Predicted Fraud Detection',xlab='Nondetected-Detected',ylab='Number Of Users', ylim = c(0,300000))    
+legend('topright',legend=c('Non-detected','Detected'),fill=c('yellow','red'))
+```
+ 
+ 
+ 
+ 
+ **Comment:** Out of the total users, 216348 users were detected as fraud using this cut off i.e. `optimal_cutoff = 0.4809411`. The information is visible in the `barplot()` as well.
+ 
+### Using general 0.5 as cut off
+ Instead of any method we are using `cut point = 0.5`, since it is the midpoint of (0,1).
+```{r}
+# Classify probabilities into 0 or 1 using cutoff = 0.5
+predicted_classes_optimal2 <- ifelse(pred > 0.5, 1, 0)
+
+# Print the first few predicted classes using the optimal cutoff
+predict_df2 <- data.frame(training_set[,30],predicted_classes_optimal2)
+colnames(predict_df2) <- c('Actual Class','Predicted Class')
+head(predict_df2)
+```
+Again, frequency table as well as the bar plot for the `predicted_classes_optima2` i.e. the predicted `Class` using `cut point = 0.5` is given below. 
+
+```{r}
+#Frequency Distribution of Predicted Fraud Detection
+table(predicted_classes_optimal2)
+```
+```{r echo=FALSE}
+barplot(table(predicted_classes_optimal2),col=c('yellow','red'),main='Barplot For Understatnding Predicted Fraud Detection',xlab='Nondetected-Detected',ylab='Number Of Users',ylim = c(0,300000))    
+legend('topright',legend=c('Non-detected','Detected'),fill=c('yellow','red'))
+```
+
+
+
+
+ **Comment:** Out of the total users 214453 users were detected as fraud using this cut off i.e. `cut point = 0.5`. The information is visible in the `barplot()` as well. Since, number of frauds is very small comared to the Nondetected case, it is not properly represented with bar.
+ 
+### selection of the proper cut point
+We can see there isn't much difference between the J index (= 0.4809411) and the general 0.5 cut point. Yet we'll check the goodness of fit in both the model and make our descision accordingly. For goodness of fit here we are checking the misclassification error. **Note** that lesser the ME better the model.
+$$
+ME = \frac{\text{Total Number of Incorrect Predictions}}{\text{Total Number of Predictions}}
+$$
+
+We're expressing ME in terms of percentage for simplicity.
+
+
+**ME for J index**
+```{r}
+ME=1-sum(predict_df1[,1]==predict_df1[,2])/length(predict_df1[,2])
+ME*100
+```
+
+
+**ME for `cut point == 0.5`**
+```{r}
+ME=1-sum(predict_df2[,1]==predict_df2[,2])/length(predict_df2[,2])
+ME*100
+```
+**Comment** Clearly the Youden's J statistic is a lesser missclassification error of 4.91%. So our ultimate `cut point == 0.4809411`.
+
+
+## Goodness of Fit
+We alredy found out that **ME** for this model is coming out to be
+```{r}
+ME=1-sum(predict_df1[,1]==predict_df1[,2])/length(predict_df1[,2])
+ME*100
+```
+Let us check the area under ROC curve i.e. **AUC**. For that we need to first plot the ROC curve.
+```{r echo=FALSE}
+roc_plot <- plot(roc_obj,main='ROC Curve for The Training Set',col='red');roc_plot
+```
+The area under ROC curve is now calculated:
+```{r}
+auc.model1 <- auc(roc_plot);auc.model1
+```
+
+**Imterpretation:** The `ME ==  4.913124%` means out of 100 predictions 4.9 or round of 5 predictions were incorrectly classified. Whereas, from the ROC curve it is seen that the bending of the curve is closer towards 1 that implies the model has a higher accuracy. the `auc.medel1 == 0.9867` means it has a good measure of separability i.e. it is more or less correctly specifies 0 as 0 and 1 as 1.
+
+Also, let us see the confusion matrix too,
+```{r}
+conf.matrix <- confusionMatrix(as.factor(predict_df1[,2]),as.factor(predict_df1[,1]))
+conf.matrix
+
+#RMSE
+RMSE(predict_df1[,2],predict_df1[,1])*100
+```
+By the confusion matrix we are getting an accuracy of around 95%. Also the RMSE value is coming out to be around 22%.
+
+
+
+# Fitting the model in `testing_set`
+From the analysis of the data we've found our `logit_model` and our cut point `J == 0.4809411`.
+
+We now impelement these to our `training_set` to check the goodness of our model.
+
+## Prediction of testing `class`
+First let us predict the probabilities of fraud detection
+```{r}
+pred.test.prob <- predict(logit_model,type = 'response',newdata = testing_set[,-30])    #We're deleting the last column in order to choose only the predictors
+test.data <- data.frame(testing_set$Class, pred.test.prob)
+colnames(test.data) <- c('Actual Class', 'Probability')
+head(test.data)
+```
+
+
+```{r echo=FALSE}
+sorted.frame <- test.data[order(test.data$Probability),]
+plot(sort(as.vector(test.data$Probability)),col='blue',xlab = 'Transaction Number',ylab = 'Proability - Class',main = 'Plot to Understand Fraud Transaction Probabily vs Transaction Number')
+points(sorted.frame$`Actual Class`, col = 'red')
+legend('right',legend=c('Actual Class','Predicted Probability'),fill=c('red','blue'))
+
+```
+**Comments:** It is clear from the graph all the `Class`s are clustering towards 1. The probability of detecting fraud, cloured in `blue`, is predicted as close to 1 to identify this scenario.
+
+We will now predict the `Class` via the cut point `J == 0.4809411`.
+```{r}
+pred.test.class <- ifelse(pred.test.prob > optimal_cutoff, 1, 0)
+test.data.class <- data.frame(testing_set$Class, pred.test.prob,pred.test.class)
+colnames(test.data.class) <- c('Actual Class', 'Probability','Predicted Class')
+head(test.data.class)
+```
+
+**The Frequency Table and Barplot for the Predicted Class in `testing_set` is Given Below**
+```{r}
+#Frequency table
+table(pred.test.class)
+```
+```{r echo=FALSE}
+barplot(table(pred.test.class),col=c('yellow','red'),main='Barplot For Understatnding Predicted Fraud Detection in Testing Set',
+        xlab='Nondetected-Detected',ylab='Number Of Users', ylim = c(0,120000))    
+legend('topright',legend=c('Non-detected','Detected'),fill=c('yellow','red'))    
+```
+
+**Comment** The `plot()` shows more or less similar results like the original data. But we need to check the goodness of fit for a more acccurate verification.
+
+## Confusion Matrix
+In the field of machine learning and specifically the problem of statistical classification, a confusion matrix, also known as error matrix,[1] is a specific table layout that allows visualization of the performance of an algorithm, typically a supervised learning one.
+
+For a binary categorical variable, a confusion matrix has 4 inputs, True Negative, True Positive, False Positive and False Negative. We will discuss those in our confusion matrix.
+
+```{r}
+library(caret)
+conf.matrix <- confusionMatrix(as.factor(test.data.class[,3]),as.factor(test.data.class[,1]))
+conf.matrix
+
+```
+```{r echo=FALSE}
+# Convert the table to a data frame for ggplot2
+conf_tabl <- as.table(conf.matrix)
+conf_df <- as.data.frame(conf_tabl)
+
+# Plot the confusion matrix
+ggplot(data = conf_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 5) +
+  scale_fill_gradient(low = "lightblue", high = "blue") +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+**Comment:** The matrix shows that 78852 cases of non fradulant transactions and 80222 cases of fraudulant transactions were correctly specified as their `Actual Class`. Whereas, 6345 cases were predicted as not being fraud although being fraud in reality and 1845 cases were predicted as not fraud though theose are the fraudulant transactions in real life. The first 2 cases are called True positive and True Negative respectively whereas the second 2 cases are called respectively False Positive and False Negative.
+
+
+## Goodness of Fit
+The different accuracy measure are given below
+```{r}
+#Root Mean Square Error
+RMSE(test.data.class[,3],test.data.class[,1])*100
+```
+
+```{r}
+#Missclassification Error
+ME=(1-(sum(test.data.class[,1]==test.data.class[,3])/length(test.data.class[,1])))*100
+ME
+```
+
+**ROC CURVE**
+```{r}
+#ROC curve
+roc_obj_test=roc(test.data.class[,1],test.data.class[,2])
+plot(roc_obj_test,main='ROC Curve for The Testing Set',col='red')
+```
+The area under the curve is given by
+```{r}
+auc(roc_obj_test)
+```
+**Interpretation** All the measures are showing similar results as the training set data. Although it may look like a case of over fitting due to high accuracy in `Confusion Matrix`.
+The model is moderate.
+
+From the confusion matrix we can calculate the type 1 and 2 error
+```{r}
+#Confusion Matrix
+conf_mt <- as.matrix(conf_tabl)
+
+#Type 1 error
+type1 <- conf_mt[2,1]/(conf_mt[2,1]+conf_mt[1,1]);type1
+```
+```{r}
+#Type 2 error
+type2 <- conf_mt[1,2]/(conf_mt[1,2] + conf_mt[2,2]);type2
+
+```
+**Interpretation** In general we know type 1 error is more important than type 2. But if you interprete the type 2 error here, it gives the proportion of transactions which are predicted as not being fraud although they're fraud in actual scenario. For industrial purpose this number is more important to us. The type 2 error is coming out to be small. So, our model extracts a good result.
+
