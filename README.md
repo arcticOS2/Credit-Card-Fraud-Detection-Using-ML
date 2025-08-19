@@ -4,7 +4,7 @@ A project demonstrating fraud detection using **Logistic Regression**, handling 
 
 ---
 
-## 🔍 Overview
+## Overview
 - **Goal:** Detect fraudulent credit card transactions in a highly imbalanced dataset  
 - **Model:** Logistic Regression (binomial GLM)  
 - **Imbalance Handling:** SMOTE oversampling of minority class  
@@ -14,7 +14,7 @@ A project demonstrating fraud detection using **Logistic Regression**, handling 
 
 ---
 
-## 📦 Setup
+## Setup
 ```r
 install.packages(c("smotefamily", "caTools", "pROC", "caret"))
 
